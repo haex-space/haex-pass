@@ -1,0 +1,23 @@
+<template>
+  <div>
+    <NuxtPage />
+    <div v-if="!haexhubStore.state.isSetupComplete" class="fixed inset-0 z-50 flex items-center justify-center bg-background">
+      <div class="text-center">
+        <div class="mb-4">Initializing...</div>
+        <div class="w-48 h-1 bg-muted rounded-full overflow-hidden">
+          <div class="h-full bg-primary animate-pulse" />
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+const haexhubStore = useHaexHubStore();
+
+// Initialize HaexHub and wait for setup completion
+onMounted(async () => {
+  await haexhubStore.initializeAsync();
+  await haexhubStore.waitForSetupAsync();
+});
+</script>
