@@ -7,7 +7,7 @@
         :key="attachment.id"
         class="flex items-center gap-2 p-3 border rounded-lg transition-colors"
         :class="editingAttachment === attachment.id ? 'bg-muted' : 'cursor-pointer hover:bg-muted/50'"
-        @click="editingAttachment !== attachment.id && isImage(attachment.fileName) ? openGallery(attachment) : null"
+        @click="editingAttachment !== attachment.id ? openViewer(attachment) : null"
       >
         <!-- Image Preview -->
         <div
@@ -20,6 +20,10 @@
             class="h-full w-full object-cover"
           />
         </div>
+        <!-- PDF Icon -->
+        <FileText v-else-if="getFileType(attachment.fileName) === 'pdf'" class="h-5 w-5 text-red-500 shrink-0" />
+        <!-- Text Icon -->
+        <FileTypeIcon v-else-if="getFileType(attachment.fileName) === 'text'" class="h-5 w-5 text-blue-500 shrink-0" />
         <!-- File Icon -->
         <File v-else class="h-5 w-5 text-muted-foreground shrink-0" />
 
@@ -95,19 +99,23 @@
           :key="attachment.id"
           class="flex items-center gap-2 p-3 border rounded-lg bg-muted/50 transition-colors"
           :class="editingAttachment === attachment.id ? 'bg-muted' : 'cursor-pointer hover:bg-muted'"
-          @click="editingAttachment !== attachment.id && isImage(attachment.fileName) ? openGallery(attachment) : null"
+          @click="editingAttachment !== attachment.id ? openViewer(attachment) : null"
         >
         <!-- Image Preview for new attachments -->
         <div
-          v-if="isImage(attachment.fileName) && (attachment as any).data"
+          v-if="isImage(attachment.fileName) && getAttachmentData(attachment)"
           class="h-12 w-12 rounded overflow-hidden shrink-0"
         >
           <img
-            :src="(attachment as any).data"
+            :src="getAttachmentData(attachment)"
             :alt="attachment.fileName"
             class="h-full w-full object-cover"
           />
         </div>
+        <!-- PDF Icon -->
+        <FileText v-else-if="getFileType(attachment.fileName) === 'pdf'" class="h-5 w-5 text-red-500 shrink-0" />
+        <!-- Text Icon -->
+        <FileTypeIcon v-else-if="getFileType(attachment.fileName) === 'text'" class="h-5 w-5 text-blue-500 shrink-0" />
         <!-- File Icon -->
         <File v-else class="h-5 w-5 text-muted-foreground shrink-0" />
 
@@ -199,19 +207,43 @@
         {{ t('addAttachment') }}
       </UiButton>
     </div>
+
+    <!-- File Viewer -->
+    <HaexItemAttachmentsViewer
+      v-model:open="viewerState.open"
+      :attachment="viewerState.attachment"
+      :file-type="viewerState.fileType"
+      :data-url="viewerState.dataUrl"
+      @download="downloadAttachment"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Plus, File, Trash2, X, Pencil, Check, Download } from "lucide-vue-next";
+import { Plus, File, FileText, FileType as FileTypeIcon, Trash2, X, Pencil, Check, Download } from "lucide-vue-next";
 import PhotoSwipeLightbox from "photoswipe/lightbox";
 import "photoswipe/style.css";
 import { eq } from "drizzle-orm";
 import { haexPasswordsBinaries } from "~/database";
 import type { SelectHaexPasswordsItemBinaries } from "~/database";
+import { getFileType, isImage, formatFileSize, type FileType } from "~/utils/fileTypes";
 
-interface AttachmentWithSize extends SelectHaexPasswordsItemBinaries {
+// Type for existing attachments from database
+interface ExistingAttachment extends SelectHaexPasswordsItemBinaries {
   size?: number;
+}
+
+// Type for new attachments being added (with base64 data)
+interface NewAttachment extends ExistingAttachment {
+  data: string; // base64 data with or without data URL prefix
+}
+
+// Union type for both existing and new attachments
+type Attachment = ExistingAttachment | NewAttachment;
+
+// Type guard to check if attachment is a new attachment with data
+function isNewAttachment(attachment: Attachment): attachment is NewAttachment {
+  return 'data' in attachment && typeof attachment.data === 'string';
 }
 
 defineProps<{
@@ -219,8 +251,8 @@ defineProps<{
   readOnly?: boolean;
 }>();
 
-const attachments = defineModel<AttachmentWithSize[]>({ default: [] });
-const attachmentsToAdd = defineModel<AttachmentWithSize[]>("attachmentsToAdd", {
+const attachments = defineModel<ExistingAttachment[]>({ default: [] });
+const attachmentsToAdd = defineModel<NewAttachment[]>("attachmentsToAdd", {
   default: [],
 });
 const attachmentsToDelete = defineModel<SelectHaexPasswordsItemBinaries[]>(
@@ -238,30 +270,59 @@ const client = haexhubStore.client;
 const editingAttachment = ref<string | null>(null);
 const editingFileName = ref<string>("");
 
-// Check if file is an image
-function isImage(fileName: string): boolean {
-  const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"];
-  return imageExtensions.some((ext) => fileName.toLowerCase().endsWith(ext));
-}
-
-// Format file size
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return "0 Bytes";
-
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
-}
+// Viewer state
+const viewerState = reactive<{
+  open: boolean;
+  attachment: Attachment | null;
+  fileType: FileType | null;
+  dataUrl: string | null;
+}>({
+  open: false,
+  attachment: null,
+  fileType: null,
+  dataUrl: null,
+});
 
 // Get attachment data
-function getAttachmentData(attachment: AttachmentWithSize): string | undefined {
-  return (attachment as any).data || undefined;
+function getAttachmentData(attachment: Attachment): string | undefined {
+  // Check if this is a new attachment with data
+  if (!isNewAttachment(attachment)) {
+    return undefined;
+  }
+
+  const data = attachment.data;
+
+  // Create data URL with appropriate MIME type
+  return createDataUrl(data, attachment.fileName);
+}
+
+// Open viewer based on file type
+function openViewer(attachment: Attachment) {
+  const fileType = getFileType(attachment.fileName);
+
+  // For images, use PhotoSwipe gallery
+  if (fileType === 'image') {
+    openGallery(attachment);
+    return;
+  }
+
+  // For PDF and text, use the viewer dialog
+  if (fileType === 'pdf' || fileType === 'text') {
+    const dataUrl = getAttachmentData(attachment);
+    if (!dataUrl) return;
+
+    viewerState.attachment = attachment;
+    viewerState.fileType = fileType;
+    viewerState.dataUrl = dataUrl;
+    viewerState.open = true;
+    return;
+  }
+
+  // For other types, do nothing (user can still download)
 }
 
 // Open PhotoSwipe gallery
-async function openGallery(attachment: AttachmentWithSize) {
+async function openGallery(attachment: Attachment) {
   // Combine all attachments (existing + new)
   const allAttachments = [...attachments.value, ...attachmentsToAdd.value];
   const images = allAttachments.filter((a) => isImage(a.fileName));
@@ -309,24 +370,24 @@ async function openGallery(attachment: AttachmentWithSize) {
 }
 
 // Remove existing attachment
-function removeExistingAttachment(attachment: AttachmentWithSize) {
+function removeExistingAttachment(attachment: ExistingAttachment) {
   attachmentsToDelete.value = [...attachmentsToDelete.value, attachment];
   attachments.value = attachments.value.filter((a) => a.id !== attachment.id);
 }
 
 // Remove new attachment
-function removeNewAttachment(attachment: AttachmentWithSize) {
+function removeNewAttachment(attachment: NewAttachment) {
   attachmentsToAdd.value = attachmentsToAdd.value.filter((a) => a.id !== attachment.id);
 }
 
 // Start editing attachment filename
-function startEditingFileName(attachment: AttachmentWithSize) {
+function startEditingFileName(attachment: Attachment) {
   editingAttachment.value = attachment.id;
   editingFileName.value = attachment.fileName;
 }
 
 // Save edited filename
-function saveFileName(attachment: AttachmentWithSize) {
+function saveFileName(attachment: Attachment) {
   if (editingFileName.value.trim()) {
     attachment.fileName = editingFileName.value.trim();
   }
@@ -341,7 +402,7 @@ function cancelEditing() {
 }
 
 // Download attachment
-async function downloadAttachment(attachment: AttachmentWithSize) {
+async function downloadAttachment(attachment: Attachment) {
   if (!client) {
     console.error("[Attachments] Download - HaexHub client not available");
     return;
@@ -354,9 +415,9 @@ async function downloadAttachment(attachment: AttachmentWithSize) {
     let base64Data: string;
 
     // Check if this is a new attachment (has data property) or existing (needs DB lookup)
-    if ((attachment as any).data) {
+    if (isNewAttachment(attachment)) {
       // New attachment - use the data directly
-      base64Data = (attachment as any).data;
+      base64Data = attachment.data;
       console.log("[Attachments] Download - Using data from new attachment");
     } else if (attachment.binaryHash && orm.value) {
       // Existing attachment - query the database
@@ -385,17 +446,32 @@ async function downloadAttachment(attachment: AttachmentWithSize) {
     }
 
     // Convert base64 to Uint8Array
-    const binaryString = atob(base64Data.split(',')[1] || base64Data); // Handle data URL format
+    console.log("[Attachments] Download - base64Data length:", base64Data.length);
+    console.log("[Attachments] Download - base64Data starts with:", base64Data.substring(0, 50));
+
+    const base64Content = base64Data.split(',')[1] || base64Data;
+    console.log("[Attachments] Download - base64Content length:", base64Content.length);
+    console.log("[Attachments] Download - base64Content starts with:", base64Content.substring(0, 50));
+
+    const binaryString = atob(base64Content);
+    console.log("[Attachments] Download - binaryString length:", binaryString.length);
+
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
 
+    console.log("[Attachments] Download - bytes length:", bytes.length);
+    console.log("[Attachments] Download - bytes first 10:", Array.from(bytes.slice(0, 10)));
+
     // Use HaexHub Filesystem API to save file
+    console.log("[Attachments] Download - Calling saveFileAsync with", bytes.length, "bytes");
     const saveResult = await client.filesystem.saveFileAsync(bytes, {
       defaultPath: attachment.fileName,
       title: t("saveFile"),
     });
+
+    console.log("[Attachments] Download - saveResult:", saveResult);
 
     if (!saveResult) {
       // User cancelled
@@ -423,15 +499,14 @@ async function onFileChange(event: Event) {
       const base64Data = reader.result as string;
 
       // Create a temporary attachment object
-      const newAttachment: AttachmentWithSize = {
+      const newAttachment: NewAttachment = {
         id: crypto.randomUUID(),
         itemId: "", // Will be set when saving
         binaryHash: "", // Will be calculated when saving
         fileName: file.name,
         size: file.size,
-        // Store base64 data temporarily (we'll need to add this to the type)
-        data: base64Data,
-      } as any;
+        data: base64Data, // base64 data with data URL prefix
+      };
 
       attachmentsToAdd.value = [...attachmentsToAdd.value, newAttachment];
     };

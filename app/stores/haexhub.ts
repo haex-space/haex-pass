@@ -1,5 +1,4 @@
 // stores/haexhub.ts
-import { defineStore, storeToRefs } from "pinia";
 import type { SqliteRemoteDatabase } from "drizzle-orm/sqlite-proxy";
 import * as schema from "~/database/schemas";
 import manifest from "../../haextension/manifest.json";
@@ -27,15 +26,13 @@ export const useHaexHubStore = defineStore("haexhub", () => {
   // tries to use the database. The hook will be executed when setupComplete() is called.
   haexhub.client.onSetup(async () => {
     // Convert migration files to the format expected by the SDK
-    const migrations = Object.entries(migrationFiles).map(
-      ([path, content]) => {
-        const fileName = path.split("/").pop()?.replace(".sql", "") || "";
-        return {
-          name: fileName,
-          sql: content as string,
-        };
-      }
-    );
+    const migrations = Object.entries(migrationFiles).map(([path, content]) => {
+      const fileName = path.split("/").pop()?.replace(".sql", "") || "";
+      return {
+        name: fileName,
+        sql: content as string,
+      };
+    });
 
     console.log(
       `[haex-pass] Running ${migrations.length} migration(s) in setup hook`

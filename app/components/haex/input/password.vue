@@ -9,22 +9,26 @@
       <UiInputGroupButton
         v-if="!readOnly"
         :icon="Dices"
+        :tooltip="t('generateQuick')"
         variant="ghost"
         @click.prevent="generateQuickPasswordAsync"
       />
       <UiInputGroupButton
         v-if="!readOnly"
         :icon="KeyRound"
+        :tooltip="t('generateAdvanced')"
         variant="ghost"
         @click.prevent="drawerOpen = true"
       />
       <UiInputGroupButton
         :icon="showPassword ? EyeOff : Eye"
+        :tooltip="showPassword ? t('hide') : t('show')"
         variant="ghost"
         @click.prevent="showPassword = !showPassword"
       />
       <UiInputGroupButton
         :icon="copied ? Check : Copy"
+        :tooltip="copied ? t('copied') : t('copy')"
         variant="ghost"
         @click.prevent="handleCopy"
       />
@@ -47,6 +51,7 @@ defineProps<{
 
 const model = defineModel<string | null>();
 
+const { t } = useI18n();
 const showPassword = ref(false);
 const drawerOpen = ref(false);
 const { copy, copied } = useClipboard();
@@ -54,7 +59,10 @@ const { getDefaultPresetAsync } = usePasswordGeneratorPresets();
 
 const handleCopy = async () => {
   if (model.value) {
-    await copy(model.value);
+    // Resolve KeePass-style references before copying
+    const { resolveReferenceAsync } = usePasswordGroupStore();
+    const resolvedValue = await resolveReferenceAsync(model.value);
+    await copy(resolvedValue || model.value);
   }
 };
 
@@ -162,3 +170,21 @@ const generateQuickPasswordAsync = async () => {
     .join("");
 };
 </script>
+
+<i18n lang="yaml">
+de:
+  generateQuick: Schnelles Passwort generieren
+  generateAdvanced: Passwort-Generator öffnen
+  show: Passwort anzeigen
+  hide: Passwort verbergen
+  copy: Kopieren
+  copied: Kopiert!
+
+en:
+  generateQuick: Generate quick password
+  generateAdvanced: Open password generator
+  show: Show password
+  hide: Hide password
+  copy: Copy
+  copied: Copied!
+</i18n>

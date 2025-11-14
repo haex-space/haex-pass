@@ -22,7 +22,6 @@
       <!-- Header Actions -->
       <div class="flex gap-2 items-center">
         <UiButton
-          v-if="!readOnly"
           :icon="Trash2"
           variant="destructive"
           size="sm"
@@ -104,6 +103,7 @@
           <div class="h-full overflow-hidden">
             <HaexItemHistory
               v-if="currentItem.details.id"
+              :key="`history-${currentItem.details.id}-${activeTab}`"
               :item-id="currentItem.details.id"
             />
           </div>
@@ -116,22 +116,13 @@
     </div>
 
     <!-- Delete Dialog -->
-    <UiAlertDialog v-model:open="showDeleteDialog">
-      <UiAlertDialogContent>
-        <UiAlertDialogHeader>
-          <UiAlertDialogTitle>{{ inTrashGroup ? t('deleteDialog.final.title') : t('deleteDialog.title') }}</UiAlertDialogTitle>
-          <UiAlertDialogDescription>
-            {{ inTrashGroup ? t('deleteDialog.final.description') : t('deleteDialog.description') }}
-          </UiAlertDialogDescription>
-        </UiAlertDialogHeader>
-        <UiAlertDialogFooter>
-          <UiAlertDialogCancel>{{ t('deleteDialog.cancel') }}</UiAlertDialogCancel>
-          <UiAlertDialogAction @click="onDeleteAsync">
-            {{ inTrashGroup ? t('deleteDialog.final.confirm') : t('deleteDialog.confirm') }}
-          </UiAlertDialogAction>
-        </UiAlertDialogFooter>
-      </UiAlertDialogContent>
-    </UiAlertDialog>
+    <HaexDialogDeleteItem
+      v-model:open="showDeleteDialog"
+      :item-name="editableDetails.title || t('untitled')"
+      :final="inTrashGroup"
+      @confirm="onDeleteAsync"
+      @abort="showDeleteDialog = false"
+    />
 
     <!-- Unsaved Changes Dialog -->
     <UiAlertDialog v-model:open="showUnsavedChangesDialog">
@@ -293,7 +284,6 @@ const onSaveAsync = async () => {
       attachments: attachments.value,
       attachmentsToAdd: attachmentsToAdd.value,
       attachmentsToDelete: attachmentsToDelete.value,
-      groupId: null, // TODO: Get from current route
     });
 
     await syncGroupItemsAsync();
@@ -343,19 +333,11 @@ de:
   save: Speichern
   cancel: Abbrechen
   delete: Löschen
+  untitled: Ohne Titel
   tabs:
     details: Details
     extra: Extra
     history: Verlauf
-  deleteDialog:
-    title: Eintrag löschen?
-    description: Der Eintrag wird in den Papierkorb verschoben.
-    cancel: Abbrechen
-    confirm: In Papierkorb verschieben
-    final:
-      title: Eintrag endgültig löschen?
-      description: Diese Aktion kann nicht rückgängig gemacht werden. Der Eintrag wird dauerhaft gelöscht.
-      confirm: Endgültig löschen
   unsavedChangesDialog:
     title: Nicht gespeicherte Änderungen
     description: Sollen die Änderungen verworfen werden?
@@ -369,19 +351,11 @@ en:
   save: Save
   cancel: Cancel
   delete: Delete
+  untitled: Untitled
   tabs:
     details: Details
     extra: Extra
     history: History
-  deleteDialog:
-    title: Delete entry?
-    description: The entry will be moved to the recycle bin.
-    cancel: Cancel
-    confirm: Move to recycle bin
-    final:
-      title: Delete entry permanently?
-      description: This action cannot be undone. This will permanently delete the entry.
-      confirm: Delete permanently
   unsavedChangesDialog:
     title: Unsaved changes
     description: Should the changes be discarded?

@@ -11,7 +11,7 @@ import {
   useForwardPropsEmits,
 } from "reka-ui"
 import { cn } from "@/lib/utils"
-import DialogOverlay from "./DialogOverlay.vue"
+import DialogOverlay from "./Overlay.vue"
 
 const props = defineProps<DialogContentProps & { class?: HTMLAttributes["class"] }>()
 const emits = defineEmits<DialogContentEmits>()

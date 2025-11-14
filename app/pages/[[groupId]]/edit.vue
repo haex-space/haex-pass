@@ -7,7 +7,6 @@
       <!-- Header Actions -->
       <div class="flex gap-2 items-center">
         <UiButton
-          v-if="!readOnly"
           :icon="Trash2"
           variant="destructive"
           size="sm"

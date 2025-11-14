@@ -96,7 +96,7 @@ const addAsync = async (
   const haexhubStore = useHaexHubStore();
 
   const newDetails: InsertHaexPasswordsItemDetails = {
-    id: crypto.randomUUID(),
+    id: details.id || crypto.randomUUID(),
     icon: details.icon || group?.icon || null,
     color: details.color || group?.color || null,
     note: details.note,
@@ -134,7 +134,7 @@ const addAsync = async (
         .values(newKeyValues);
     }
 
-    // Create initial snapshot
+    // Create initial snapshot (no attachments on creation)
     const snapshotData = {
       title: newDetails.title,
       username: newDetails.username,
@@ -144,6 +144,7 @@ const addAsync = async (
       tags: newDetails.tags,
       otpSecret: newDetails.otpSecret,
       keyValues: newKeyValues.map(kv => ({ key: kv.key, value: kv.value })),
+      attachments: [],
     };
 
     await haexhubStore.orm.insert(haexPasswordsItemSnapshots).values({
@@ -348,7 +349,7 @@ const updateAsync = async ({
   attachments?: SelectHaexPasswordsItemBinaries[];
   attachmentsToAdd?: SelectHaexPasswordsItemBinaries[];
   attachmentsToDelete?: SelectHaexPasswordsItemBinaries[];
-  groupId: string | null;
+  groupId?: string | null;
 }) => {
   const haexhubStore = useHaexHubStore();
 
@@ -388,38 +389,19 @@ const updateAsync = async ({
   try {
     if (!haexhubStore.orm) throw new Error("Database not initialized");
 
-    // Create snapshot before updating
-    const allKeyValues = [...newKeyValues, ...newKeyValuesAdd];
-    const snapshotData = {
-      title: newDetails.title,
-      username: newDetails.username,
-      password: newDetails.password,
-      url: newDetails.url,
-      note: newDetails.note,
-      tags: newDetails.tags,
-      otpSecret: newDetails.otpSecret,
-      keyValues: allKeyValues.map(kv => ({ key: kv.key, value: kv.value })),
-    };
-
-    await haexhubStore.orm.insert(haexPasswordsItemSnapshots).values({
-      id: crypto.randomUUID(),
-      itemId: newDetails.id,
-      snapshotData: JSON.stringify(snapshotData),
-      createdAt: new Date().toISOString(),
-      modifiedAt: new Date().toISOString(),
-    });
-
     // Update item details
     await haexhubStore.orm
       .update(haexPasswordsItemDetails)
       .set(newDetails)
       .where(eq(haexPasswordsItemDetails.id, newDetails.id));
 
-    // Update group item relation
-    await haexhubStore.orm
-      .update(haexPasswordsGroupItems)
-      .set({ itemId: newDetails.id, groupId })
-      .where(eq(haexPasswordsGroupItems.itemId, newDetails.id));
+    // Update group item relation (only if groupId is explicitly provided)
+    if (groupId !== undefined) {
+      await haexhubStore.orm
+        .update(haexPasswordsGroupItems)
+        .set({ itemId: newDetails.id, groupId })
+        .where(eq(haexPasswordsGroupItems.itemId, newDetails.id));
+    }
 
     // Update existing key values
     for (const keyValue of newKeyValues) {
@@ -514,6 +496,37 @@ const updateAsync = async ({
           .where(eq(haexPasswordsItemBinaries.id, attachment.id));
       }
     }
+
+    // Create snapshot AFTER all changes (including attachments)
+    // Load all current attachments from DB to get correct binaryHash values
+    const currentAttachments = await haexhubStore.orm
+      .select()
+      .from(haexPasswordsItemBinaries)
+      .where(eq(haexPasswordsItemBinaries.itemId, newDetails.id));
+
+    const allKeyValues = [...newKeyValues, ...newKeyValuesAdd];
+    const snapshotData = {
+      title: newDetails.title,
+      username: newDetails.username,
+      password: newDetails.password,
+      url: newDetails.url,
+      note: newDetails.note,
+      tags: newDetails.tags,
+      otpSecret: newDetails.otpSecret,
+      keyValues: allKeyValues.map(kv => ({ key: kv.key, value: kv.value })),
+      attachments: currentAttachments.map(att => ({
+        fileName: att.fileName,
+        binaryHash: att.binaryHash
+      })),
+    };
+
+    await haexhubStore.orm.insert(haexPasswordsItemSnapshots).values({
+      id: crypto.randomUUID(),
+      itemId: newDetails.id,
+      snapshotData: JSON.stringify(snapshotData),
+      createdAt: new Date().toISOString(),
+      modifiedAt: new Date().toISOString(),
+    });
 
     return newDetails.id;
   } catch (error) {

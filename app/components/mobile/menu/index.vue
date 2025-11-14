@@ -28,7 +28,7 @@
               : (currentSelectedItem = item)
           "
         >
-          <PassMobileMenuItem v-bind="item" @click="onClickItemAsync(item)" />
+          <MobileMenuItem v-bind="item" @click="onClickItemAsync(item)" />
         </li>
       </TransitionGroup>
     </ul>

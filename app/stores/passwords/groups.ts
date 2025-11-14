@@ -4,6 +4,7 @@ import type { IPasswordMenuItem } from '~/types/password'
 import {
   haexPasswordsGroupItems,
   haexPasswordsGroups,
+  haexPasswordsItemBinaries,
   type InsertHaexPasswordsGroups,
   type SelectHaexPasswordsGroupItems,
   type SelectHaexPasswordsGroups,
@@ -31,13 +32,17 @@ export const usePasswordGroupStore = defineStore('passwordGroupStore', () => {
   watch(
     currentGroupId,
     async (newId) => {
+      console.log('[passwordGroupStore] currentGroupId changed to:', newId)
       if (newId) {
+        console.log('[passwordGroupStore] Reading group:', newId)
         currentGroup.value = await readGroupAsync(newId)
+        console.log('[passwordGroupStore] Group read complete:', currentGroup.value?.name)
       } else {
+        console.log('[passwordGroupStore] Setting currentGroup to null')
         currentGroup.value = null
       }
     },
-    { immediate: false }
+    { immediate: true }
   )
 
   const selectedGroupItems = ref<IPasswordMenuItem[]>()
@@ -57,6 +62,7 @@ export const usePasswordGroupStore = defineStore('passwordGroupStore', () => {
   }
 
   const syncGroupItemsAsync = async () => {
+    console.log('[syncGroupItemsAsync] START')
     const haexhubStore = useHaexHubStore()
 
     // Wait for database to be initialized
@@ -67,8 +73,13 @@ export const usePasswordGroupStore = defineStore('passwordGroupStore', () => {
 
     const { syncItemsAsync } = usePasswordItemStore()
 
+    console.log('[syncGroupItemsAsync] Reading groups...')
     groups.value = (await readGroupsAsync()) ?? []
+    console.log('[syncGroupItemsAsync] Groups read:', groups.value.length)
+
+    console.log('[syncGroupItemsAsync] Syncing items...')
     await syncItemsAsync()
+    console.log('[syncGroupItemsAsync] COMPLETE')
   }
 
   // Watch for haexhub setup completion AND orm initialization, then sync
@@ -80,9 +91,9 @@ export const usePasswordGroupStore = defineStore('passwordGroupStore', () => {
     }
   }, { immediate: true })
 
-  watch(currentGroupId, () => syncGroupItemsAsync(), {
-    immediate: false,
-  })
+  // Removed watch on currentGroupId that was causing sync on every navigation
+  // This was causing performance issues and potential race conditions
+  // syncGroupItemsAsync is now called explicitly when needed
 
   const inTrashGroup = computed(() =>
     breadCrumbs.value?.some((item) => item.id === trashId)
@@ -92,6 +103,7 @@ export const usePasswordGroupStore = defineStore('passwordGroupStore', () => {
     addGroupAsync,
     areGroupsEqual,
     breadCrumbs,
+    cloneGroupItemsAsync,
     createTrashIfNotExistsAsync,
     currentGroup,
     currentGroupId,
@@ -100,11 +112,13 @@ export const usePasswordGroupStore = defineStore('passwordGroupStore', () => {
     groups,
     inTrashGroup,
     insertGroupItemsAsync,
+    moveGroupItemsAsync,
     navigateToGroupAsync,
     navigateToGroupItemsAsync,
     readGroupAsync,
     readGroupItemsAsync,
     readGroupsAsync,
+    resolveReferenceAsync,
     selectedGroupItems,
     syncGroupItemsAsync,
     trashId,
@@ -304,6 +318,236 @@ const insertGroupItemsAsync = async (
     }
   }
   return syncGroupItemsAsync()
+}
+
+const moveGroupItemsAsync = async (
+  itemIds: string[],
+  targetGroupId?: string | null
+) => {
+  const haexhubStore = useHaexHubStore()
+  if (!haexhubStore.orm) throw new Error('Database not initialized')
+
+  const { groups, syncGroupItemsAsync } = usePasswordGroupStore()
+  const targetGroup = groups.find((group) => group.id === targetGroupId)
+
+  for (const itemId of itemIds) {
+    // Check if it's a group
+    const group = groups.find((g) => g.id === itemId)
+
+    if (group) {
+      // Move group by updating parentId
+      if (group.parentId === targetGroup?.id) continue
+
+      await haexhubStore.orm
+        .update(haexPasswordsGroups)
+        .set({ parentId: targetGroup?.id ?? null })
+        .where(eq(haexPasswordsGroups.id, itemId))
+    } else {
+      // Move item by updating groupId in group_items
+      if (targetGroup) {
+        await haexhubStore.orm
+          .update(haexPasswordsGroupItems)
+          .set({ groupId: targetGroup.id })
+          .where(eq(haexPasswordsGroupItems.itemId, itemId))
+      }
+    }
+  }
+
+  await syncGroupItemsAsync()
+}
+
+// Helper function to resolve references for items, groups, and custom fields
+const resolveReferenceAsync = async (value: string | null | undefined): Promise<string | null> => {
+  if (!value) return null
+
+  // Reference patterns:
+  // {REF:FIELD@ITEM:uuid} - Standard item fields
+  // {REF:FIELD@GROUP:uuid} - Group fields
+  // {REF:FIELDNAME@ITEM.EXTRA:uuid} - Custom fields (KeyValues)
+  const refPattern = /\{REF:([A-Z_]+)@(ITEM|GROUP|ITEM\.EXTRA):([a-f0-9-]+)\}/i
+  const match = value.match(refPattern)
+
+  if (!match) return value // Not a reference, return as is
+
+  const [, field, type, uuid] = match
+
+  if (!field || !type || !uuid) return value // Invalid reference format
+
+  const fieldUpper = field.toUpperCase()
+  const typeUpper = type.toUpperCase()
+
+  if (typeUpper === 'ITEM') {
+    const { readAsync } = usePasswordItemStore()
+    const referencedItem = await readAsync(uuid)
+
+    if (!referencedItem) return value // Referenced item not found, return original value
+
+    // Map field name to item detail property
+    let fieldValue: string | null | undefined = null
+
+    switch (fieldUpper) {
+      case 'TITLE':
+        fieldValue = referencedItem.details.title
+        break
+      case 'USERNAME':
+        fieldValue = referencedItem.details.username
+        break
+      case 'PASSWORD':
+        fieldValue = referencedItem.details.password
+        break
+      case 'URL':
+        fieldValue = referencedItem.details.url
+        break
+      case 'NOTE':
+      case 'NOTES':
+        fieldValue = referencedItem.details.note
+        break
+      case 'OTP':
+      case 'OTPSECRET':
+      case 'OTP_SECRET':
+        fieldValue = referencedItem.details.otpSecret
+        break
+      case 'TAGS':
+        fieldValue = referencedItem.details.tags
+        break
+      default:
+        return value // Unknown field, return original value
+    }
+
+    // Recursively resolve in case the referenced field also has a reference
+    return await resolveReferenceAsync(fieldValue ?? null)
+  } else if (typeUpper === 'ITEM.EXTRA') {
+    const { readKeyValuesAsync } = usePasswordItemStore()
+    const keyValues = await readKeyValuesAsync(uuid)
+
+    if (!keyValues || keyValues.length === 0) return value // No custom fields found
+
+    // Find the custom field by key name
+    const customField = keyValues.find(
+      (kv) => kv.key?.toUpperCase() === fieldUpper
+    )
+
+    if (!customField || !customField.value) return value // Field not found
+
+    // Recursively resolve in case the custom field value also has a reference
+    return await resolveReferenceAsync(customField.value)
+  } else if (typeUpper === 'GROUP') {
+    const group = await readGroupAsync(uuid)
+
+    if (!group) return value // Referenced group not found, return original value
+
+    // Map field name to group property
+    let fieldValue: string | null | undefined = null
+
+    switch (fieldUpper) {
+      case 'NAME':
+        fieldValue = group.name
+        break
+      case 'DESCRIPTION':
+        fieldValue = group.description
+        break
+      case 'ICON':
+        fieldValue = group.icon
+        break
+      case 'COLOR':
+        fieldValue = group.color
+        break
+      default:
+        return value // Unknown field, return original value
+    }
+
+    // Recursively resolve in case the referenced field also has a reference
+    return await resolveReferenceAsync(fieldValue ?? null)
+  }
+
+  return value
+}
+
+const cloneGroupItemsAsync = async (
+  itemIds: string[],
+  targetGroupId?: string | null,
+  options: {
+    includeHistory?: boolean
+    referenceCredentials?: boolean
+    cloneAppendix?: string
+  } = {}
+) => {
+  const {
+    includeHistory = false,
+    referenceCredentials = true,
+    cloneAppendix,
+  } = options
+
+  const haexhubStore = useHaexHubStore()
+  if (!haexhubStore.orm) throw new Error('Database not initialized')
+
+  const { groups, syncGroupItemsAsync } = usePasswordGroupStore()
+  const { readAsync, readKeyValuesAsync, readAttachmentsAsync, addAsync } =
+    usePasswordItemStore()
+  const targetGroup = groups.find((group) => group.id === targetGroupId)
+
+  for (const itemId of itemIds) {
+    // Check if it's a group
+    const group = groups.find((g) => g.id === itemId)
+
+    if (group) {
+      // Clone group
+      const groupName = cloneAppendix
+        ? `${group.name} ${cloneAppendix}`
+        : group.name || ''
+
+      await addGroupAsync({
+        id: crypto.randomUUID(),
+        name: groupName,
+        description: group.description,
+        icon: group.icon,
+        color: group.color,
+        parentId: targetGroupId || null,
+      })
+    } else {
+      // Clone item
+      const originalItem = await readAsync(itemId)
+      const keyValues = await readKeyValuesAsync(itemId)
+      const attachments = await readAttachmentsAsync(itemId)
+
+      if (originalItem) {
+        const itemTitle = cloneAppendix
+          ? `${originalItem.details.title} ${cloneAppendix}`
+          : originalItem.details.title || ''
+
+        const newDetails = {
+          ...originalItem.details,
+          id: crypto.randomUUID(),
+          title: itemTitle,
+        }
+
+        // If referenceCredentials is true, replace username and password with references
+        if (referenceCredentials) {
+          // New reference format: {REF:FIELD@ITEM:uuid}
+          newDetails.username = `{REF:USERNAME@ITEM:${itemId}}`
+          newDetails.password = `{REF:PASSWORD@ITEM:${itemId}}`
+        }
+
+        await addAsync(newDetails, keyValues || [], targetGroup)
+
+        // Copy attachments if includeHistory is true
+        if (includeHistory && attachments && attachments.length > 0) {
+          for (const attachment of attachments) {
+            await haexhubStore.orm
+              .insert(haexPasswordsItemBinaries)
+              .values({
+                id: crypto.randomUUID(),
+                itemId: newDetails.id,
+                binaryHash: attachment.binaryHash,
+                fileName: attachment.fileName,
+              })
+          }
+        }
+      }
+    }
+  }
+
+  await syncGroupItemsAsync()
 }
 
 const createTrashIfNotExistsAsync = async () => {

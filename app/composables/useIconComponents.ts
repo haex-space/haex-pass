@@ -47,6 +47,8 @@ import {
   Apple,
   Globe,
 } from 'lucide-vue-next';
+import { Icon } from '@iconify/vue';
+import { getBinaryDataAsync } from '~/utils/cleanup';
 
 export const useIconComponents = () => {
   const iconComponents: Record<string, any> = {
@@ -105,6 +107,48 @@ export const useIconComponents = () => {
 
   const getIconComponent = (iconName: string | null | undefined, fallback: any = Key) => {
     if (!iconName) return fallback;
+
+    // Check if it's a binary icon (custom KeePass icon)
+    if (iconName.startsWith('binary:')) {
+      const hash = iconName.replace('binary:', '');
+
+      // Return a proper Vue component that renders an img tag
+      return defineComponent({
+        name: 'BinaryIcon',
+        props: {
+          class: String,
+          style: [String, Object],
+        },
+        setup(props) {
+          const src = ref<string | null>(null);
+          const haexHubStore = useHaexHubStore();
+
+          onMounted(async () => {
+            if (haexHubStore.db) {
+              const base64Data = await getBinaryDataAsync(haexHubStore.db, hash);
+              if (base64Data) {
+                src.value = `data:image/png;base64,${base64Data}`;
+              }
+            }
+          });
+
+          return () => h('img', {
+            src: src.value || '',
+            class: props.class,
+            style: props.style,
+            alt: 'Custom icon',
+          });
+        },
+      });
+    }
+
+    // Check if it's an Iconify icon (contains ':')
+    if (iconName.includes(':')) {
+      // Return a functional component that renders the Iconify Icon
+      return (props: any) => h(Icon, { icon: iconName, ...props });
+    }
+
+    // Otherwise use the lucide icon mapping
     return iconComponents[iconName] || fallback;
   };
 

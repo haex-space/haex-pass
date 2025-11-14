@@ -11,6 +11,7 @@
       />
       <UiInputGroupButton
         :icon="secretCopied ? Check : Copy"
+        :tooltip="secretCopied ? t('copied') : t('copySecret')"
         variant="ghost"
         @click.prevent="copySecret"
       />
@@ -61,6 +62,7 @@
         </div>
         <UiButton
           :icon="copied ? Check : Copy"
+          :tooltip="copied ? t('copied') : t('copyCode')"
           size="icon"
           variant="ghost"
           @click="copyCode"
@@ -188,10 +190,14 @@ onUnmounted(() => {
 de:
   label: OTP Secret
   currentCode: Aktueller Code
-  copy: Kopieren
+  copySecret: Secret kopieren
+  copyCode: Code kopieren
+  copied: Kopiert!
 
 en:
   label: OTP Secret
   currentCode: Current code
-  copy: Copy
+  copySecret: Copy secret
+  copyCode: Copy code
+  copied: Copied!
 </i18n>

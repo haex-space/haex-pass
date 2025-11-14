@@ -91,7 +91,7 @@ const hasChanges = computed(() => {
   );
 });
 
-const { addGroupAsync } = usePasswordGroupStore();
+const { addGroupAsync, syncGroupItemsAsync } = usePasswordGroupStore();
 
 const createAsync = async () => {
   try {
@@ -100,6 +100,9 @@ const createAsync = async () => {
     const newGroup = await addGroupAsync(group.value);
 
     if (!newGroup.id) return;
+
+    // Sync groups to make the new group visible
+    await syncGroupItemsAsync();
 
     ignoreChanges.value = true;
     await navigateTo(

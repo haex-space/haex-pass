@@ -12,6 +12,7 @@
       <UiInputGroupButton
         v-if="!readonly"
         :icon="isLoadingFavicon ? Loader2 : Image"
+        :tooltip="t('favicon.fetch')"
         variant="ghost"
         :disabled="!model?.length || isLoadingFavicon"
         :class="{ 'animate-spin': isLoadingFavicon }"
@@ -19,12 +20,14 @@
       />
       <UiInputGroupButton
         :icon="ExternalLink"
+        :tooltip="t('open')"
         variant="ghost"
         :disabled="!model?.length"
         @click.prevent="openUrl"
       />
       <UiInputGroupButton
         :icon="copied ? Check : Copy"
+        :tooltip="copied ? t('copied') : t('copy')"
         variant="ghost"
         @click.prevent="handleCopy"
       />
@@ -35,6 +38,8 @@
 <script setup lang="ts">
 import { useClipboard } from "@vueuse/core";
 import { Copy, Check, ExternalLink, Image, Loader2 } from "lucide-vue-next";
+import { arrayBufferToBase64, addBinaryAsync } from '~/utils/cleanup';
+import { toast } from "vue-sonner";
 
 const model = defineModel<string | null>();
 
@@ -48,6 +53,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const { copy, copied } = useClipboard();
+const { loadCustomIconsAsync } = useCustomIcons();
 const isLoadingFavicon = ref(false);
 
 const handleCopy = async () => {
@@ -61,14 +67,15 @@ const openUrl = async () => {
 
   const haexhubStore = useHaexHubStore();
   if (!haexhubStore.client) {
-    console.error('HaexHub client not available');
+    console.error('[URL] HaexHub client not available');
     return;
   }
 
   try {
     await haexhubStore.client.web.openAsync(model.value);
   } catch (error) {
-    console.error('Failed to open URL:', error);
+    // Method not implemented yet in host application
+    console.log('[URL] web.openAsync not available, URL:', model.value);
   }
 };
 
@@ -76,8 +83,8 @@ const fetchFaviconAsync = async () => {
   if (!model.value) return;
 
   const haexhubStore = useHaexHubStore();
-  if (!haexhubStore.client) {
-    console.error('HaexHub client not available');
+  if (!haexhubStore.client || !haexhubStore.orm) {
+    console.error('[FaviconFetch] HaexHub client or ORM not available');
     return;
   }
 
@@ -85,83 +92,91 @@ const fetchFaviconAsync = async () => {
     isLoadingFavicon.value = true;
 
     // Extract domain from URL
-    const url = new URL(model.value);
-    const domain = url.hostname;
-    const origin = url.origin;
-
-    // Try to fetch favicon to verify URL is accessible
-    // DuckDuckGo's icon service doesn't have CORS restrictions
-    const faviconSources = [
-      `https://icons.duckduckgo.com/ip3/${domain}.ico`,
-      `${origin}/favicon.ico`,
-      `${origin}/favicon.png`,
-    ];
-
-    for (const faviconUrl of faviconSources) {
-      try {
-        const response = await haexhubStore.client.web.fetchAsync(faviconUrl);
-
-        // Check if response is successful (status 200-299)
-        if (response.status >= 200 && response.status < 300) {
-          // Favicon found and accessible
-          break;
-        }
-      } catch (error) {
-        // Try next source
-        continue;
-      }
-    }
-
-    // Set icon based on domain (regardless of favicon availability)
-    emit('faviconFetched', getFallbackIconForDomain(domain));
-  } catch (error) {
-    console.error('Error fetching favicon:', error);
-
-    // Still try to set a fallback icon based on domain
+    let domain: string;
     try {
       const url = new URL(model.value);
-      emit('faviconFetched', getFallbackIconForDomain(url.hostname));
-    } catch {
-      // Ignore if URL parsing fails
+      domain = url.hostname;
+    } catch (urlError) {
+      // Invalid URL format
+      toast.error(t('favicon.invalidUrl'));
+      return;
     }
+
+    // Use DuckDuckGo's icon service - it's reliable and doesn't require per-domain permissions
+    const faviconUrl = `https://icons.duckduckgo.com/ip3/${domain}.ico`;
+
+    try {
+      const response = await haexhubStore.client.web.fetchAsync(faviconUrl);
+
+      // Check if response is successful (status 200-299) and has content
+      if (response.status >= 200 && response.status < 300 && response.body) {
+        // Convert ArrayBuffer to base64 using utility function
+        const base64 = arrayBufferToBase64(response.body);
+
+        // Save to database as icon
+        const hash = await addBinaryAsync(
+          haexhubStore.orm,
+          base64,
+          response.body.byteLength,
+          'icon'
+        );
+
+        // Emit the binary hash as icon name
+        emit('faviconFetched', `binary:${hash}`);
+        console.log('[FaviconFetch] Successfully saved favicon with hash:', hash);
+
+        // Reload custom icons list so it appears immediately
+        await loadCustomIconsAsync();
+
+        // Show success toast
+        toast.success(t('favicon.downloaded'));
+        return;
+      }
+    } catch (error: any) {
+      console.error('[FaviconFetch] Failed to fetch favicon:', error);
+
+      // Show error toast with appropriate message
+      const errorMessage = error?.code === 1002
+        ? t('favicon.permissionError')
+        : t('favicon.fetchError');
+
+      toast.error(errorMessage);
+    }
+  } catch (error) {
+    console.error('[FaviconFetch] Error:', error);
+
+    // Show generic error toast
+    toast.error(t('favicon.error'));
   } finally {
     isLoadingFavicon.value = false;
   }
-};
-
-// Helper function to suggest an icon based on domain
-const getFallbackIconForDomain = (domain: string): string => {
-  const domainLower = domain.toLowerCase();
-
-  // Common domain to icon mappings
-  if (domainLower.includes('github')) return 'github';
-  if (domainLower.includes('gmail') || domainLower.includes('google')) return 'mail';
-  if (domainLower.includes('twitter') || domainLower.includes('x.com')) return 'twitter';
-  if (domainLower.includes('facebook')) return 'facebook';
-  if (domainLower.includes('linkedin')) return 'linkedin';
-  if (domainLower.includes('instagram')) return 'instagram';
-  if (domainLower.includes('youtube')) return 'youtube';
-  if (domainLower.includes('amazon')) return 'shopping-cart';
-  if (domainLower.includes('netflix')) return 'tv';
-  if (domainLower.includes('spotify')) return 'music';
-  if (domainLower.includes('apple')) return 'apple';
-  if (domainLower.includes('microsoft')) return 'windows';
-  if (domainLower.includes('dropbox') || domainLower.includes('drive')) return 'cloud';
-  if (domainLower.includes('slack')) return 'message-square';
-  if (domainLower.includes('discord')) return 'message-circle';
-  if (domainLower.includes('reddit')) return 'message-square';
-  if (domainLower.includes('stackoverflow')) return 'code';
-  if (domainLower.includes('paypal') || domainLower.includes('bank')) return 'credit-card';
-
-  // Default to globe icon
-  return 'globe';
 };
 </script>
 
 <i18n lang="yaml">
 de:
   url: URL
+  open: URL öffnen
+  copy: Kopieren
+  copied: Kopiert!
+  favicon:
+    fetch: Favicon herunterladen
+    downloaded: Favicon erfolgreich heruntergeladen
+    permissionError: Keine Berechtigung für Favicon-Download. Bitte Extension neu laden.
+    fetchError: Favicon konnte nicht heruntergeladen werden
+    error: Fehler beim Favicon-Download
+    invalidUrl: Ungültige URL. Bitte gib eine vollständige URL mit Protokoll ein (z.B. https://example.com)
 
 en:
   url: URL
+  open: Open URL
+  copy: Copy
+  copied: Copied!
+  favicon:
+    fetch: Download favicon
+    downloaded: Favicon downloaded successfully
+    permissionError: No permission for favicon download. Please reload extension.
+    fetchError: Failed to download favicon
+    error: Error downloading favicon
+    invalidUrl: Invalid URL. Please enter a complete URL with protocol (e.g. https://example.com)
 </i18n>

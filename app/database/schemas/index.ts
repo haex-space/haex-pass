@@ -103,6 +103,7 @@ export const haexPasswordsBinaries = sqliteTable(
     hash: text().primaryKey(), // SHA-256 hash als Primary Key
     data: text().notNull(), // Base64-encoded binary data
     size: integer().notNull(),
+    type: text().default('attachment'), // 'icon' or 'attachment'
     createdAt: text("created_at").default(sql`(CURRENT_TIMESTAMP)`),
   }
 );
