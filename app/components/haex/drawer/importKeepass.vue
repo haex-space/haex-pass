@@ -94,6 +94,7 @@ import {
 } from "~/database/schemas/index";
 import type * as schema from "~/database/schemas/index";
 import { getIconForKeePassIndex } from "~/utils/keepassIconMapping";
+import { trashId } from "~/stores/groupItems/groups";
 
 // Set argon2 implementation for kdbxweb using hash-wasm
 // Argon2 types: 0 = Argon2d, 1 = Argon2i, 2 = Argon2id
@@ -243,6 +244,10 @@ const importAsync = async () => {
       "[KeePass Import] Error message:",
       err instanceof Error ? err.message : String(err)
     );
+    // Log the underlying cause if it's a DrizzleQueryError
+    if (err instanceof Error && 'cause' in err) {
+      console.error("[KeePass Import] Error cause:", err.cause);
+    }
 
     const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -269,37 +274,44 @@ function getFieldValue(field: kdbxweb.KdbxEntryField | undefined): string {
   return String(field);
 }
 
+// Helper function to convert KeePass hex UUID (32 chars) to standard UUID format (8-4-4-4-12)
+function hexToStandardUuid(hex: string): string {
+  const lower = hex.toLowerCase();
+  return `${lower.slice(0, 8)}-${lower.slice(8, 12)}-${lower.slice(12, 16)}-${lower.slice(16, 20)}-${lower.slice(20, 32)}`;
+}
+
 // Helper function to migrate KeePass references to new format
 function migrateKeePassReferences(value: string): string {
   if (!value) return value;
 
   // KeePass reference patterns and their mappings to new format
-  const migrations: Array<{ pattern: RegExp; replacement: string }> = [
+  // KeePass uses 32-char hex UUIDs without dashes, we convert them to standard UUID format
+  const migrations: Array<{ pattern: RegExp; replacer: (match: string, uuid: string) => string }> = [
     // Title: {REF:T@I:uuid} or {REF:T@E:uuid} -> {REF:TITLE@ITEM:uuid}
-    { pattern: /\{REF:T@[IE]:([a-f0-9-]+)\}/gi, replacement: '{REF:TITLE@ITEM:$1}' },
+    { pattern: /\{REF:T@[IE]:([A-F0-9]{32})\}/gi, replacer: (_, uuid) => `{REF:TITLE@ITEM:${hexToStandardUuid(uuid)}}` },
 
     // Username: {REF:U@I:uuid} or {REF:U@E:uuid} -> {REF:USERNAME@ITEM:uuid}
-    { pattern: /\{REF:U@[IE]:([a-f0-9-]+)\}/gi, replacement: '{REF:USERNAME@ITEM:$1}' },
+    { pattern: /\{REF:U@[IE]:([A-F0-9]{32})\}/gi, replacer: (_, uuid) => `{REF:USERNAME@ITEM:${hexToStandardUuid(uuid)}}` },
 
     // Password: {REF:P@I:uuid} or {REF:P@E:uuid} -> {REF:PASSWORD@ITEM:uuid}
-    { pattern: /\{REF:P@[IE]:([a-f0-9-]+)\}/gi, replacement: '{REF:PASSWORD@ITEM:$1}' },
+    { pattern: /\{REF:P@[IE]:([A-F0-9]{32})\}/gi, replacer: (_, uuid) => `{REF:PASSWORD@ITEM:${hexToStandardUuid(uuid)}}` },
 
     // URL: {REF:A@I:uuid} or {REF:A@E:uuid} -> {REF:URL@ITEM:uuid}
-    { pattern: /\{REF:A@[IE]:([a-f0-9-]+)\}/gi, replacement: '{REF:URL@ITEM:$1}' },
+    { pattern: /\{REF:A@[IE]:([A-F0-9]{32})\}/gi, replacer: (_, uuid) => `{REF:URL@ITEM:${hexToStandardUuid(uuid)}}` },
 
     // Notes: {REF:N@I:uuid} or {REF:N@E:uuid} -> {REF:NOTE@ITEM:uuid}
-    { pattern: /\{REF:N@[IE]:([a-f0-9-]+)\}/gi, replacement: '{REF:NOTE@ITEM:$1}' },
+    { pattern: /\{REF:N@[IE]:([A-F0-9]{32})\}/gi, replacer: (_, uuid) => `{REF:NOTE@ITEM:${hexToStandardUuid(uuid)}}` },
 
     // Group name: {REF:T@G:uuid} -> {REF:NAME@GROUP:uuid}
-    { pattern: /\{REF:T@G:([a-f0-9-]+)\}/gi, replacement: '{REF:NAME@GROUP:$1}' },
+    { pattern: /\{REF:T@G:([A-F0-9]{32})\}/gi, replacer: (_, uuid) => `{REF:NAME@GROUP:${hexToStandardUuid(uuid)}}` },
 
     // Group notes: {REF:N@G:uuid} -> {REF:DESCRIPTION@GROUP:uuid}
-    { pattern: /\{REF:N@G:([a-f0-9-]+)\}/gi, replacement: '{REF:DESCRIPTION@GROUP:$1}' },
+    { pattern: /\{REF:N@G:([A-F0-9]{32})\}/gi, replacer: (_, uuid) => `{REF:DESCRIPTION@GROUP:${hexToStandardUuid(uuid)}}` },
   ];
 
   let migratedValue = value;
-  for (const { pattern, replacement } of migrations) {
-    migratedValue = migratedValue.replace(pattern, replacement);
+  for (const { pattern, replacer } of migrations) {
+    migratedValue = migratedValue.replace(pattern, replacer);
   }
 
   return migratedValue;
@@ -356,6 +368,29 @@ function extractBinaryData(
     ? binary.value || binary
     : binary;
   return new Uint8Array(binaryValue as ArrayBuffer);
+}
+
+// Helper function to convert KeePass Base64 UUID to standard UUID format
+// KeePass uses Base64-encoded 16-byte UUIDs, we need to convert to standard UUID string
+function kdbxUuidToStandardUuid(kdbxUuid: kdbxweb.KdbxUuid): string {
+  // kdbxweb.KdbxUuid.id is already a Base64 string representation
+  // We need to decode it and convert to standard UUID format (8-4-4-4-12)
+  const base64 = kdbxUuid.id;
+
+  // Decode Base64 to bytes
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  // Convert 16 bytes to standard UUID format
+  const hex = Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+
+  // Format as UUID: 8-4-4-4-12
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
 // Helper function to convert Uint8Array to Base64 (handles large files)
@@ -436,6 +471,21 @@ async function importKdbxAsync(
   // Group mapping: KeePass UUID → haex Group ID
   const groupMapping = new Map<string, string>();
 
+  // Identify KeePass Recycle Bin UUID (converted to standard UUID format)
+  const recycleBinUuid = kdbx.meta.recycleBinEnabled && kdbx.meta.recycleBinUuid
+    ? kdbxUuidToStandardUuid(kdbx.meta.recycleBinUuid)
+    : null;
+
+  console.log("[KeePass Import] Recycle Bin enabled:", kdbx.meta.recycleBinEnabled);
+  console.log("[KeePass Import] Recycle Bin UUID:", recycleBinUuid);
+
+  // Ensure trash folder exists if KeePass has a recycle bin
+  if (recycleBinUuid) {
+    const { createTrashIfNotExistsAsync } = useGroupItemsDeleteStore();
+    await createTrashIfNotExistsAsync();
+    console.log("[KeePass Import] Ensured trash folder exists");
+  }
+
   // Collect all groups
   const allGroups: Array<{
     group: kdbxweb.KdbxGroup;
@@ -452,7 +502,7 @@ async function importKdbxAsync(
     }
 
     for (const subGroup of group.groups) {
-      collectGroups(subGroup, group.uuid.id);
+      collectGroups(subGroup, kdbxUuidToStandardUuid(group.uuid));
     }
   }
 
@@ -463,28 +513,49 @@ async function importKdbxAsync(
   let currentStep = 0;
 
   // Create groups (parent groups first) - use original KeePass UUIDs
+  // Map KeePass Recycle Bin to local trash folder
   for (const { group, parentUuid } of allGroups) {
-    const parentId = parentUuid || null;
+    const groupUuid = kdbxUuidToStandardUuid(group.uuid);
+
+    // Check if this group is the KeePass Recycle Bin
+    const isRecycleBin = recycleBinUuid && groupUuid === recycleBinUuid;
+
+    if (isRecycleBin) {
+      // Map KeePass Recycle Bin to local trash folder (don't create a new group)
+      console.log("[KeePass Import] Mapping Recycle Bin to local trash:", group.name);
+      groupMapping.set(groupUuid, trashId);
+      currentStep++;
+      progress.value = Math.round((currentStep / totalSteps) * 100);
+      continue;
+    }
+
+    // Resolve parent ID using groupMapping
+    // If parent was Recycle Bin, it's already mapped to trashId
+    // Child folders keep their structure but are now under trashId
+    const parentId = parentUuid ? (groupMapping.get(parentUuid) || parentUuid) : null;
 
     // Extract icon from KeePass
     const icon = await extractIconAsync(kdbx, group, orm.value!);
 
     const newGroup = await addGroupAsync({
-      id: group.uuid.id, // Use original KeePass UUID
+      id: groupUuid, // Use converted KeePass UUID
       name: group.name,
       icon,
       parentId,
     });
 
-    groupMapping.set(group.uuid.id, newGroup.id);
+    groupMapping.set(groupUuid, newGroup.id);
     currentStep++;
     progress.value = Math.round((currentStep / totalSteps) * 100);
   }
 
   // Import entries with attachments and history
   for (const entry of allEntries) {
-    const groupId = entry.parentGroup
-      ? groupMapping.get(entry.parentGroup.uuid.id) || null
+    const parentGroupUuid = entry.parentGroup
+      ? kdbxUuidToStandardUuid(entry.parentGroup.uuid)
+      : null;
+    const groupId = parentGroupUuid
+      ? groupMapping.get(parentGroupUuid) || null
       : null;
 
     // Extract fields and migrate KeePass references
@@ -542,10 +613,26 @@ async function importKdbxAsync(
     );
 
     // Create entry manually to have control over snapshot creation
-    // Use original KeePass UUID
-    const newEntryId = entry.uuid.id;
+    // Use converted KeePass UUID
+    const newEntryId = kdbxUuidToStandardUuid(entry.uuid);
 
     // Insert item details
+    // createdAt is a string field, updateAt is an integer timestamp field (expects Date object)
+    // Handle various possible formats from KeePass: Date, number (Unix timestamp), or undefined
+    let updateAtDate: Date | null = null;
+    if (entry.times.lastModTime) {
+      console.log("[KeePass Import] lastModTime type:", typeof entry.times.lastModTime, entry.times.lastModTime);
+      if (entry.times.lastModTime instanceof Date) {
+        updateAtDate = entry.times.lastModTime;
+      } else if (typeof entry.times.lastModTime === 'number') {
+        // Unix timestamp in seconds, convert to Date
+        updateAtDate = new Date(entry.times.lastModTime * 1000);
+      } else {
+        updateAtDate = new Date(entry.times.lastModTime as unknown as string);
+      }
+      console.log("[KeePass Import] updateAtDate:", updateAtDate);
+    }
+
     await orm.value!.insert(haexPasswordsItemDetails).values({
       id: newEntryId,
       title,
@@ -560,9 +647,7 @@ async function importKdbxAsync(
       createdAt: entry.times.creationTime
         ? new Date(entry.times.creationTime).toISOString()
         : null,
-      updateAt: entry.times.lastModTime
-        ? new Date(entry.times.lastModTime)
-        : null,
+      updateAt: updateAtDate,
     });
 
     // Insert group item relation

@@ -25,7 +25,7 @@ const { copy, copied } = useClipboard();
 const handleCopy = async () => {
   if (model.value) {
     // Resolve KeePass-style references before copying
-    const { resolveReferenceAsync } = usePasswordGroupStore();
+    const { resolveReferenceAsync } = useGroupItemsCloneStore();
     const resolvedValue = await resolveReferenceAsync(String(model.value));
     await copy(resolvedValue || String(model.value));
   }

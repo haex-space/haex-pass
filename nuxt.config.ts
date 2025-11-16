@@ -1,8 +1,8 @@
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import tailwindcss from '@tailwindcss/vite'
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineNuxtConfig({
-  compatibilityDate: '2025-07-15',
+  compatibilityDate: "2025-07-15",
   devtools: { enabled: false }, // Disabled because DevTools don't work in sandboxed iframes
 
   vue: {
@@ -10,47 +10,48 @@ export default defineNuxtConfig({
   },
 
   modules: [
-    '@nuxt/eslint',
-    'shadcn-nuxt',
-    '@nuxtjs/i18n',
-    '@pinia/nuxt',
-    '@nuxtjs/color-mode',
-    '@nuxt/icon',
-    '@haex-space/sdk/nuxt', // HaexHub SDK with automatic polyfill injection and baseURL configuration
+    "@nuxt/eslint",
+    "shadcn-nuxt",
+    "@nuxtjs/i18n",
+    "@pinia/nuxt",
+    "@nuxtjs/color-mode",
+    "@nuxt/icon",
+    "@haex-space/sdk/nuxt", // HaexHub SDK with automatic polyfill injection and baseURL configuration
   ],
 
   colorMode: {
-    classSuffix: '',
+    classSuffix: "",
   },
 
-  css: ['~/assets/css/tailwind.css'],
+  css: ["~/assets/css/tailwind.css"],
+
   ssr: false,
 
   imports: {
     dirs: [
-      'composables/**',
-      'stores/**',
-      'components/**',
-      'pages/**',
-      'types/**',
+      "composables/**",
+      "stores/**",
+      "components/**",
+      "pages/**",
+      "types/**",
     ],
   },
 
   i18n: {
-    strategy: 'prefix_and_default',
-    defaultLocale: 'de',
+    strategy: "prefix_and_default",
+    defaultLocale: "de",
 
     locales: [
-      { code: 'de', language: 'de-DE', isCatchallLocale: true },
-      { code: 'en', language: 'en-EN' },
+      { code: "de", language: "de-DE", isCatchallLocale: true },
+      { code: "en", language: "en-EN" },
     ],
 
     detectBrowserLanguage: {
       useCookie: true,
-      cookieKey: 'i18n_redirected',
-      redirectOn: 'root', // recommended
+      cookieKey: "i18n_redirected",
+      redirectOn: "root", // recommended
     },
-    types: 'composition',
+    types: "composition",
   },
 
   router: {
@@ -63,7 +64,7 @@ export default defineNuxtConfig({
     head: {
       script: [
         {
-          innerHTML: 'window.__VUE_PROD_DEVTOOLS__ = false; window.__VUE_PROD_HYDRATION_MISMATCH_DETAILS__ = false;',
+          //innerHTML: 'window.__VUE_PROD_DEVTOOLS__ = false; window.__VUE_PROD_HYDRATION_MISMATCH_DETAILS__ = false;',
         },
       ],
     },
@@ -72,7 +73,7 @@ export default defineNuxtConfig({
   vite: {
     plugins: [tailwindcss()],
     optimizeDeps: {
-      include: ['@vueuse/core'],
+      include: ["@vueuse/core"],
     },
   },
-})
+});

@@ -12,6 +12,9 @@ export const useUiStore = defineStore("uiStore", () => {
   // "smAndDown" gilt für sm, xs usw.
   const isSmallScreen = breakpoints.smaller("sm");
 
+  // "mdAndUp" gilt für md, lg, xl usw.
+  const isMediumScreen = breakpoints.greaterOrEqual("md");
+
   const { $i18n } = useNuxtApp();
 
   $i18n.setLocaleMessage("de", {
@@ -73,6 +76,7 @@ export const useUiStore = defineStore("uiStore", () => {
     currentThemeName,
     defaultTheme,
     isSmallScreen,
+    isMediumScreen,
     tabsRerenderKey,
     activeTabIndex,
     triggerTabsRerender,

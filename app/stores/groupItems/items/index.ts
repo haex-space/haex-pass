@@ -17,6 +17,12 @@ import {
 } from "~/database";
 import { getSingleRouteParam } from "~/utils/helper";
 
+// Extended type for attachments with binary data (used when adding new attachments)
+interface AttachmentWithData extends SelectHaexPasswordsItemBinaries {
+  data: string;
+  size: number;
+}
+
 export const usePasswordItemStore = defineStore("passwordItemStore", () => {
   const currentItemId = computed({
     get: () =>
@@ -69,6 +75,34 @@ export const usePasswordItemStore = defineStore("passwordItemStore", () => {
     items.value = result as unknown as typeof items.value;
   };
 
+  const prepareDeleteItems = (selectedIds: string[]) => {
+    const { isGroupInTrash } = useGroupTreeStore();
+
+    // Check which items are in trash by checking their group
+    const itemsInTrash = selectedIds.filter((itemId) => {
+      const item = items.value.find((item) => item.haex_passwords_item_details.id === itemId);
+      const groupId = item?.haex_passwords_group_items.groupId;
+      return groupId ? isGroupInTrash(groupId) : false;
+    });
+
+    const itemsNotInTrash = selectedIds.filter((itemId) => !itemsInTrash.includes(itemId));
+
+    // Determine which items to delete and if it's final
+    if (itemsNotInTrash.length > 0) {
+      // If any items are not in trash, only delete those (move to trash)
+      return {
+        itemsToDelete: itemsNotInTrash,
+        isFinal: false,
+      };
+    } else {
+      // All items are in trash - final delete
+      return {
+        itemsToDelete: itemsInTrash,
+        isFinal: true,
+      };
+    }
+  };
+
   return {
     currentItemId,
     currentItem,
@@ -78,6 +112,7 @@ export const usePasswordItemStore = defineStore("passwordItemStore", () => {
     deleteAsync,
     deleteKeyValueAsync,
     items,
+    prepareDeleteItems,
     readByGroupIdAsync,
     readAsync,
     readKeyValuesAsync,
@@ -214,36 +249,33 @@ const readByGroupIdAsync = async (groupId?: string | null) => {
     const haexhubStore = useHaexHubStore();
     if (!haexhubStore.orm) throw new Error("Database not initialized");
 
-    type EntryType = {
-      haex_passwords_item_details: SelectHaexPasswordsItemDetails;
-      haex_passwords_group_items: SelectHaexPasswordsGroupItems;
-    };
+    // Explicit column selection avoids dynamic table name keys in join results.
+    // Without this, Drizzle returns { [tableName]: { ...fields } } where tableName
+    // can have a prefix (e.g., "haex_passwords_item_details"), causing type issues.
+    const baseQuery = haexhubStore.orm
+      .select({
+        id: haexPasswordsItemDetails.id,
+        title: haexPasswordsItemDetails.title,
+        username: haexPasswordsItemDetails.username,
+        password: haexPasswordsItemDetails.password,
+        url: haexPasswordsItemDetails.url,
+        note: haexPasswordsItemDetails.note,
+        icon: haexPasswordsItemDetails.icon,
+        color: haexPasswordsItemDetails.color,
+        tags: haexPasswordsItemDetails.tags,
+        otpSecret: haexPasswordsItemDetails.otpSecret,
+      })
+      .from(haexPasswordsGroupItems)
+      .innerJoin(
+        haexPasswordsItemDetails,
+        eq(haexPasswordsItemDetails.id, haexPasswordsGroupItems.itemId)
+      );
 
-    let entries: EntryType[];
+    const result = groupId
+      ? await baseQuery.where(eq(haexPasswordsGroupItems.groupId, groupId))
+      : await baseQuery.where(isNull(haexPasswordsGroupItems.groupId));
 
-    if (groupId) {
-      const result = await haexhubStore.orm
-        .select()
-        .from(haexPasswordsGroupItems)
-        .innerJoin(
-          haexPasswordsItemDetails,
-          eq(haexPasswordsItemDetails.id, haexPasswordsGroupItems.itemId)
-        )
-        .where(eq(haexPasswordsGroupItems.groupId, groupId));
-      entries = result as unknown as EntryType[];
-    } else {
-      const result = await haexhubStore.orm
-        .select()
-        .from(haexPasswordsGroupItems)
-        .innerJoin(
-          haexPasswordsItemDetails,
-          eq(haexPasswordsItemDetails.id, haexPasswordsGroupItems.itemId)
-        )
-        .where(isNull(haexPasswordsGroupItems.groupId));
-      entries = result as unknown as EntryType[];
-    }
-
-    return entries?.map((entry) => entry.haex_passwords_item_details);
+    return result as SelectHaexPasswordsItemDetails[];
   } catch (error) {
     console.error(error);
     return [];
@@ -347,7 +379,7 @@ const updateAsync = async ({
   keyValuesAdd: SelectHaexPasswordsItemKeyValues[];
   keyValuesDelete: SelectHaexPasswordsItemKeyValues[];
   attachments?: SelectHaexPasswordsItemBinaries[];
-  attachmentsToAdd?: SelectHaexPasswordsItemBinaries[];
+  attachmentsToAdd?: AttachmentWithData[];
   attachmentsToDelete?: SelectHaexPasswordsItemBinaries[];
   groupId?: string | null;
 }) => {
@@ -442,7 +474,7 @@ const updateAsync = async ({
     if (attachmentsToAdd && attachmentsToAdd.length) {
       for (const attachment of attachmentsToAdd) {
         // Get base64 data from the temporary attachment object
-        const base64Data = (attachment as any).data as string;
+        const base64Data = attachment.data;
 
         if (!base64Data) {
           console.warn("Attachment has no data:", attachment.fileName);
@@ -463,7 +495,7 @@ const updateAsync = async ({
             .values({
               hash: binaryHash,
               data: base64Data,
-              size: (attachment as any).size || 0,
+              size: attachment.size || 0,
             });
         } catch (error) {
           // Ignore duplicate key error - binary already exists
@@ -539,7 +571,7 @@ const deleteAsync = async (itemId: string, final: boolean = false) => {
   const haexhubStore = useHaexHubStore();
   if (!haexhubStore.orm) throw new Error("Database not initialized");
 
-  const { createTrashIfNotExistsAsync, trashId } = usePasswordGroupStore();
+  const { createTrashIfNotExistsAsync, trashId } = useGroupItemsDeleteStore();
 
   if (final) {
     try {

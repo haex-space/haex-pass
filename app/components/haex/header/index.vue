@@ -23,8 +23,13 @@
         />
       </UiInputGroup>
 
-      <!-- Add -->
-      <UiDropdownMenu>
+      <!-- Add / Progress -->
+      <HaexButtonProgress
+        v-if="isProcessing"
+        :progress="processingProgress"
+        class="shrink-0"
+      />
+      <UiDropdownMenu v-else>
         <UiDropdownMenuTrigger as-child>
           <UiButton
             :icon="Plus"
@@ -120,6 +125,7 @@ const router = useRouter();
 const localePath = useLocalePath();
 const { searchInput } = storeToRefs(useSearchStore());
 const { currentGroupId } = storeToRefs(usePasswordGroupStore());
+const { isProcessing, processingProgress } = storeToRefs(useGroupItemsDeleteStore());
 
 const showImportDrawer = ref(false);
 

@@ -1,7 +1,7 @@
 <template>
   <div class="h-screen flex flex-col overflow-hidden">
     <HaexHeader class="flex-none" />
-    <div class="flex-none relative border-b border-border">
+    <div class="flex-none relative border-b border-border md:hidden">
       <TransitionGroup
         enter-active-class="transition-all duration-300 ease-out absolute top-0 left-0 w-full"
         leave-active-class="transition-all duration-300 ease-in absolute top-0 left-0 w-full"
@@ -28,15 +28,42 @@
         />
       </TransitionGroup>
     </div>
-    <div class="flex-1 overflow-y-auto">
-      <slot />
+    <!-- Main Content Area with Sidebar for Desktop -->
+    <div class="flex-1 overflow-hidden">
+      <!-- Mobile: No Resizable -->
+      <div class="md:hidden h-full overflow-y-auto">
+        <slot />
+      </div>
+
+      <!-- Desktop: Resizable Panels -->
+      <UiResizablePanelGroup
+        id="tree-content-panels"
+        direction="horizontal"
+        class="hidden md:flex h-full"
+        auto-save-id="haex-pass:tree-panel-sizes"
+      >
+        <!-- Tree Sidebar Panel -->
+        <UiResizablePanel id="tree-panel" :default-size="20" :min-size="15">
+          <HaexTree @delete="onDeleteFromTree" />
+        </UiResizablePanel>
+
+        <!-- Resizable Handle -->
+        <UiResizableHandle />
+
+        <!-- Content Panel -->
+        <UiResizablePanel id="content-panel" :default-size="80">
+          <div class="h-full overflow-y-auto">
+            <slot />
+          </div>
+        </UiResizablePanel>
+      </UiResizablePanelGroup>
     </div>
 
     <!-- Delete Dialog -->
     <HaexDialogDeleteItem
       v-model:open="showDeleteDialog"
       :item-name="deleteDialogItemName"
-      :final="inTrashGroup"
+      :final="deleteDialogFinal"
       @confirm="onConfirmDeleteAsync"
       @abort="showDeleteDialog = false"
     />
@@ -50,16 +77,20 @@
 
 <script setup lang="ts">
 import { onKeyStroke } from "@vueuse/core";
+import type { SelectHaexPasswordsGroups } from "~/database";
 
-const { breadCrumbs, inTrashGroup } = storeToRefs(usePasswordGroupStore());
+const { breadCrumbs } = storeToRefs(useGroupTreeStore());
 const selectionStore = useSelectionStore();
+const deleteDialogStore = useDeleteDialogStore();
+const {
+  showDialog: showDeleteDialog,
+  itemName: deleteDialogItemName,
+  isFinal: deleteDialogFinal,
+} = storeToRefs(deleteDialogStore);
 const router = useRouter();
 const localePath = useLocalePath();
 
-const showDeleteDialog = ref(false);
-const deleteDialogItemName = ref<string>("");
 const showCloneDialog = ref(false);
-const { t } = useI18n();
 
 // Keyboard shortcuts
 // Ctrl/Cmd + A: Select all items
@@ -98,8 +129,8 @@ onKeyStroke("x", (event) => {
   }
 });
 
-// Ctrl/Cmd + C: Copy selected items
-onKeyStroke("c", (event) => {
+// Ctrl/Cmd + K: Copy selected items
+onKeyStroke("k", (event) => {
   if (
     (event.ctrlKey || event.metaKey) &&
     selectionStore.isSelectionMode &&
@@ -150,8 +181,8 @@ const onCutAsync = async () => {
 };
 
 const onPasteAsync = async () => {
-  const { moveGroupItemsAsync, syncGroupItemsAsync, currentGroupId } =
-    usePasswordGroupStore();
+  const { syncGroupItemsAsync, currentGroupId } = usePasswordGroupStore();
+  const { moveGroupItemsAsync } = useGroupItemsMoveStore();
 
   if (!selectionStore.clipboardItems.length) return;
 
@@ -203,34 +234,18 @@ const onDeleteAsync = async () => {
 };
 
 const onConfirmDeleteAsync = async () => {
-  const { deleteAsync: deleteItem } = usePasswordItemStore();
-  const { deleteGroupAsync, groups, syncGroupItemsAsync } =
-    usePasswordGroupStore();
-
-  if (!selectionStore.selectedItems.size) return;
-
-  for (const itemId of selectionStore.selectedItems) {
-    // Check if it's a group
-    const isGroup = groups.find((g) => g.id === itemId);
-
-    if (isGroup) {
-      await deleteGroupAsync(itemId, inTrashGroup.value);
-    } else {
-      await deleteItem(itemId, inTrashGroup.value);
-    }
-  }
-
-  await syncGroupItemsAsync();
-  selectionStore.clearSelection();
-  showDeleteDialog.value = false;
+  await deleteDialogStore.confirmDeleteAsync();
 };
+
+const { t } = useI18n();
 
 const onConfirmCloneAsync = async (options: {
   includeHistory: boolean;
   referenceCredentials: boolean;
   withCloneAppendix: boolean;
 }) => {
-  const { cloneGroupItemsAsync, currentGroupId } = usePasswordGroupStore();
+  const { currentGroupId } = usePasswordGroupStore();
+  const { cloneGroupItemsAsync } = useGroupItemsCloneStore();
 
   if (!selectionStore.clipboardItems.length) return;
 
@@ -248,12 +263,16 @@ const onConfirmCloneAsync = async (options: {
   selectionStore.clearClipboard();
   showCloneDialog.value = false;
 };
+
+// Handle delete from tree context menu
+const onDeleteFromTree = (group: SelectHaexPasswordsGroups) => {
+  deleteDialogStore.deleteFromTree(group);
+};
 </script>
 
 <i18n lang="yaml">
 de:
-  cloneAppendix: "(Klon)"
-
+  cloneAppendix: Klone
 en:
-  cloneAppendix: "(Clone)"
+  cloneAppendix: Clone
 </i18n>

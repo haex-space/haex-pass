@@ -166,7 +166,7 @@ const router = useRouter();
 const { currentItem } = storeToRefs(usePasswordItemStore());
 const { updateAsync, deleteAsync, readAsync } = usePasswordItemStore();
 const { syncGroupItemsAsync } = usePasswordGroupStore();
-const { inTrashGroup } = storeToRefs(usePasswordGroupStore());
+const { inTrashGroup } = storeToRefs(useGroupTreeStore());
 
 // Key-Value tracking
 const keyValuesAdd = ref<SelectHaexPasswordsItemKeyValues[]>([]);

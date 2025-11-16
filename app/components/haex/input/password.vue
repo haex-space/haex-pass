@@ -60,7 +60,7 @@ const { getDefaultPresetAsync } = usePasswordGeneratorPresets();
 const handleCopy = async () => {
   if (model.value) {
     // Resolve KeePass-style references before copying
-    const { resolveReferenceAsync } = usePasswordGroupStore();
+    const { resolveReferenceAsync } = useGroupItemsCloneStore();
     const resolvedValue = await resolveReferenceAsync(model.value);
     await copy(resolvedValue || model.value);
   }

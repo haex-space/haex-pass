@@ -9,10 +9,10 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "package": "haex sign dist",
+    "package": "haex sign .output/public",
     "build:release": "pnpm build && pnpm package",
     "ext:dev": "haex dev",
-    "ext:build": "nuxt build --preset static && haex sign dist",
+    "ext:build": "nuxt build --preset static && haex sign .output/public",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
@@ -22,7 +22,7 @@
     "release:major": "node scripts/release.js major"
   },
   "dependencies": {
-    "@haex-space/sdk": "^1.0.0",
+    "@haex-space/sdk": "^1.0.1",
     "@iconify/vue": "^5.0.0",
     "@nuxt/eslint": "^1.10.0",
     "@nuxt/icon": "^2.1.0",

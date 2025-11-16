@@ -106,8 +106,10 @@ const { t } = useI18n();
 const router = useRouter();
 const localePath = useLocalePath();
 
-const { inTrashGroup, currentGroupId } = storeToRefs(usePasswordGroupStore());
-const { readGroupAsync, updateAsync, syncGroupItemsAsync, deleteGroupAsync } = usePasswordGroupStore();
+const { currentGroupId } = storeToRefs(usePasswordGroupStore());
+const { readGroupAsync, updateAsync, syncGroupItemsAsync } = usePasswordGroupStore();
+const { inTrashGroup } = storeToRefs(useGroupTreeStore());
+const { deleteGroupAsync } = useGroupItemsDeleteStore();
 
 const group = ref<SelectHaexPasswordsGroups | null>(null);
 const originalGroup = ref<string>('');
