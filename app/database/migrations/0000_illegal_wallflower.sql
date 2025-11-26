@@ -2,6 +2,7 @@ CREATE TABLE `b4401f13f65e576b8a30ff9fd83df82a8bb707e1994d40c99996fe88603cefca__
 	`hash` text PRIMARY KEY NOT NULL,
 	`data` text NOT NULL,
 	`size` integer NOT NULL,
+	`type` text DEFAULT 'attachment',
 	`created_at` text DEFAULT (CURRENT_TIMESTAMP)
 );
 --> statement-breakpoint
@@ -34,7 +35,7 @@ CREATE TABLE `b4401f13f65e576b8a30ff9fd83df82a8bb707e1994d40c99996fe88603cefca__
 	`name` text,
 	`description` text,
 	`icon` text,
-	`order` integer,
+	`sort_order` integer,
 	`color` text,
 	`parent_id` text,
 	`created_at` text DEFAULT (CURRENT_TIMESTAMP),
@@ -58,6 +59,7 @@ CREATE TABLE `b4401f13f65e576b8a30ff9fd83df82a8bb707e1994d40c99996fe88603cefca__
 	`password` text,
 	`note` text,
 	`icon` text,
+	`color` text,
 	`tags` text,
 	`url` text,
 	`otp_secret` text,

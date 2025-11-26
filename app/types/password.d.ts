@@ -5,4 +5,7 @@ export interface IPasswordMenuItem {
   name: string | null
   type: 'group' | 'item'
   inTrash?: boolean
+  // Additional fields for items (not groups)
+  username?: string | null
+  url?: string | null
 }

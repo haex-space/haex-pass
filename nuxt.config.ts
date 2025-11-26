@@ -16,7 +16,7 @@ export default defineNuxtConfig({
     "@pinia/nuxt",
     "@nuxtjs/color-mode",
     "@nuxt/icon",
-    "@haex-space/sdk/nuxt", // HaexHub SDK with automatic polyfill injection and baseURL configuration
+    "@haex-space/vault-sdk/nuxt", // HaexVault SDK with automatic polyfill injection and baseURL configuration
   ],
 
   colorMode: {

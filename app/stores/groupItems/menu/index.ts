@@ -64,6 +64,8 @@ export const useGroupItemsMenuStore = defineStore('groupItemsMenuStore', () => {
           id: details?.id as string,
           name: details?.title as string | null,
           type: 'item',
+          username: details?.username as string | null,
+          url: details?.url as string | null,
         }
       })
     )

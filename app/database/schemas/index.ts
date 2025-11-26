@@ -9,7 +9,7 @@ import {
 import manifest from "../../../haextension/manifest.json";
 
 // Helper function to create prefixed table names
-const getTableName = (name: string) => `${manifest.public_key}__${manifest.name}__${name}`;
+const getTableName = (name: string) => `${manifest.publicKey}__${manifest.name}__${name}`;
 
 export const haexPasswordsItemDetails = sqliteTable(
   getTableName("haex_passwords_item_details"),
@@ -62,7 +62,7 @@ export const haexPasswordsGroups = sqliteTable(
     name: text(),
     description: text(),
     icon: text(),
-    order: integer(),
+    order: integer("sort_order"),  // Renamed from 'order' to avoid SQL keyword conflict
     color: text(),
     parentId: text("parent_id").references(
       (): AnySQLiteColumn => haexPasswordsGroups.id,

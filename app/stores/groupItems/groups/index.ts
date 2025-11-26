@@ -131,11 +131,39 @@ export const usePasswordGroupStore = defineStore('passwordGroupStore', () => {
     await syncItemsAsync()
   }
 
+  /**
+   * Auto-navigate to single folder in root
+   * If there's only one folder (excluding trash) in root, navigate directly into it
+   */
+  const autoNavigateToSingleFolderAsync = async () => {
+    // Only auto-navigate when we're at root level
+    if (currentGroupId.value !== null) return
+
+    // Get root-level groups (excluding trash)
+    const rootGroups = groups.value.filter(
+      (group) => group.parentId === null && group.id !== trashId
+    )
+
+    // If exactly one folder exists, navigate into it
+    if (rootGroups.length === 1) {
+      const singleFolder = rootGroups[0]
+      const localePath = useLocalePath()
+      await navigateTo(
+        localePath({
+          name: 'passwordGroupItems',
+          params: { groupId: singleFolder.id },
+        })
+      )
+    }
+  }
+
   // Watch for haexhub setup completion AND orm initialization, then sync
   const haexhubStore = useHaexHubStore()
-  watch(() => ({ isSetupComplete: haexhubStore.state.isSetupComplete, orm: haexhubStore.orm }), ({ isSetupComplete, orm }) => {
+  watch(() => ({ isSetupComplete: haexhubStore.state.isSetupComplete, orm: haexhubStore.orm }), async ({ isSetupComplete, orm }) => {
     if (isSetupComplete && orm) {
-      syncGroupItemsAsync()
+      await syncGroupItemsAsync()
+      // After initial sync, check if we should auto-navigate
+      await autoNavigateToSingleFolderAsync()
     }
   }, { immediate: true })
 

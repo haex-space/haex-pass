@@ -1,5 +1,5 @@
 <template>
-  <UiBreadcrumb class="px-7 py-4 border-b">
+  <UiBreadcrumb class="px-7 py-4">
     <div class="flex items-center justify-between w-full min-h-[32px]">
       <UiBreadcrumbList>
         <UiBreadcrumbItem>
@@ -61,7 +61,7 @@
           @click="selectionStore.clearClipboard()"
         >
           {{
-            t("clipboardCount", { count: selectionStore.clipboardItems.size })
+            t("clipboardCount", { count: selectionStore.clipboardItems.length })
           }}
         </UiButton>
         <UiButton

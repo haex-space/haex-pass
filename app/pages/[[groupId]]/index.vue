@@ -34,16 +34,21 @@
               </UiItemMedia>
               <UiItemContent>
                 <UiItemTitle>{{ item.name }}</UiItemTitle>
+                <!-- Show username and URL on medium screens and up -->
+                <UiItemDescription v-if="item.type === 'item'" class="hidden md:grid grid-cols-2 gap-4 text-xs">
+                  <span class="flex items-center gap-1 truncate">
+                    <User class="w-3 h-3 shrink-0" />
+                    <span class="truncate">{{ item.username || '-' }}</span>
+                  </span>
+                  <span class="flex items-center gap-1 truncate">
+                    <Globe class="w-3 h-3 shrink-0" />
+                    <span class="truncate">{{ item.url || '-' }}</span>
+                  </span>
+                </UiItemDescription>
               </UiItemContent>
               <UiItemActions>
-                <div
-                  v-if="selectionStore.isSelected(item.id)"
-                  class="flex items-center"
-                >
-                  <Check class="w-5 h-5 text-primary" />
-                </div>
                 <ChevronRight
-                  v-else-if="item.type === 'group'"
+                  v-if="item.type === 'group'"
                   class="w-4 h-4"
                 />
               </UiItemActions>
@@ -96,12 +101,12 @@
 <script setup lang="ts">
 import {
   ChevronRight,
-  Check,
   Edit,
   Trash,
   Copy,
   User,
   ExternalLink,
+  Globe,
 } from "lucide-vue-next";
 import type { IPasswordMenuItem } from "~/types/password";
 import { onLongPress, onKeyStroke, useClipboard } from "@vueuse/core";

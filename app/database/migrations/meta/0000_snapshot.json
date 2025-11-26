@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6cdafc9f-9aae-45f8-b924-86dd957e1300",
+  "id": "8d9af6e9-c492-4912-886f-daaeb6b547ce",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "b4401f13f65e576b8a30ff9fd83df82a8bb707e1994d40c99996fe88603cefca__haex-pass__haex_passwords_binaries": {
@@ -27,6 +27,14 @@
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'attachment'"
         },
         "created_at": {
           "name": "created_at",
@@ -244,8 +252,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "order": {
-          "name": "order",
+        "sort_order": {
+          "name": "sort_order",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -406,6 +414,13 @@
         },
         "icon": {
           "name": "icon",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "color": {
+          "name": "color",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
